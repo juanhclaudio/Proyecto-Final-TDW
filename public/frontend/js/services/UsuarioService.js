@@ -1,9 +1,12 @@
 class UsuarioService {
-
   static _instance = null;
 
   constructor() {
     if (UsuarioService._instance) return UsuarioService._instance;
+    
+    this._cache = null;
+    this._lastFetch = 0;
+    
     UsuarioService._instance = this;
   }
 
@@ -13,9 +16,21 @@ class UsuarioService {
   }
 
   async getUsuarios() {
+    const CACHE_TTL = 60000;
+    const now = Date.now();
+
+    if (this._cache && (now - this._lastFetch < CACHE_TTL)) {
+      return Promise.resolve(this._cache);
+    }
+
     try {
       const response = await ApiService.getInstance().fetchWithAuth('/users');
-      return response.users || response || []; 
+      const data = response.users || response || []; 
+      
+      this._cache = data;
+      this._lastFetch = now;
+      
+      return this._cache;
     } catch (error) {
       console.error("Error fetching users:", error);
       throw error;
@@ -27,6 +42,9 @@ class UsuarioService {
       method: 'POST',
       body: JSON.stringify(userData)
     });
+
+    this._cache = null;
+
     return nuevoUsuario;
   }
 
@@ -68,6 +86,8 @@ class UsuarioService {
       headers: headers,
       body: JSON.stringify(updateData)
     });
+    
+    this._cache = null;
     
     if (EventBus.getInstance()) EventBus.getInstance().emit('usuarios:changed');
     

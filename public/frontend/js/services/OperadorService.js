@@ -1,7 +1,12 @@
 class OperadorService {
   static _instance = null;
+
   constructor() {
     if (OperadorService._instance) return OperadorService._instance;
+    
+    this._cache = null;
+    this._lastFetch = 0;
+    
     OperadorService._instance = this;
   }
 
@@ -11,10 +16,22 @@ class OperadorService {
   }
 
   async getAll() {
+    const CACHE_TTL = 60000;
+    const now = Date.now();
+
+    if (this._cache && (now - this._lastFetch < CACHE_TTL)) {
+      return Promise.resolve(this._cache);
+    }
+
     try {
       const response = await ApiService.getInstance().fetchWithAuth('/operators');
       const data = Array.isArray(response) ? response : (response.operadores || response.operators || []);
-      return window.DataFactory ? window.DataFactory.createCollection('operador', data) : data;
+      const processedData = window.DataFactory ? window.DataFactory.createCollection('operador', data) : data;
+      
+      this._cache = processedData;
+      this._lastFetch = now;
+      
+      return this._cache;
     } catch (error) {
       console.error("Error al obtener operadores de la API:", error);
       return [];
@@ -37,12 +54,18 @@ class OperadorService {
         body: JSON.stringify(data)
       });
     }
+
+    this._cache = null;
+
     if (EventBus.getInstance()) EventBus.getInstance().emit('operadores:changed', await this.getAll());
     return result;
   }
   
   async delete(id) {
     await ApiService.getInstance().fetchWithAuth(`/operators/${id}`, { method: 'DELETE' });
+    
+    this._cache = null;
+
     if (EventBus.getInstance()) EventBus.getInstance().emit('operadores:changed', await this.getAll());
   }
 }
