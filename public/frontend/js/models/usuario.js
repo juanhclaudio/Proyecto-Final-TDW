@@ -1,8 +1,8 @@
 class Usuario {
-  constructor(email, password, rol = 'PÚBLICO') {
+  constructor(email, password, role = 'PÚBLICO') {
     this.email = email;
     this.password = password;
-    this.rol = rol;
+    this.role = role.toUpperCase();
   }
   static esPasswordValido(password) {
     const tieneNumero = /\d/.test(password);

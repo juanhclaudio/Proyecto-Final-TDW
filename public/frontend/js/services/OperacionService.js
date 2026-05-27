@@ -3,7 +3,6 @@ class OperacionService {
   constructor() {
     if (OperacionService._instance) return OperacionService._instance;
     OperacionService._instance = this;
-    this._eventBus = window.EventBus ? window.EventBus.getInstance() : null;
   }
 
   static getInstance() {
@@ -38,12 +37,12 @@ class OperacionService {
         body: JSON.stringify(data)
       });
     }
-    if (this._eventBus) this._eventBus.emit('operaciones:changed', await this.getAll());
+    if (EventBus.getInstance()) EventBus.getInstance().emit('operaciones:changed', await this.getAll());
     return result;
   }
 
   async delete(id) {
     await ApiService.getInstance().fetchWithAuth(`/operations/${id}`, { method: 'DELETE' });
-    if (this._eventBus) this._eventBus.emit('operaciones:changed', await this.getAll());
+    if (EventBus.getInstance()) EventBus.getInstance().emit('operaciones:changed', await this.getAll());
   }
 }

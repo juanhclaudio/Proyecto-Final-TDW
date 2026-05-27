@@ -1,4 +1,5 @@
 class EventBus {
+  static _instance = null;
   constructor() {
     if (EventBus._instance) return EventBus._instance;
     EventBus._instance = this;

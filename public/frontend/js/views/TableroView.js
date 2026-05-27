@@ -90,18 +90,29 @@ class TableroView {
 
   _startAutoRefresh() {
     if (this._refreshInterval) clearInterval(this._refreshInterval);
-    this._refreshInterval = setInterval(() => this._loadData(), 60000);
+    this._refreshInterval = setInterval(() => {
+      if (!document.getElementById('tbody-salidas')) {
+        clearInterval(this._refreshInterval);
+        return;
+      }
+      this._loadData();
+    }, 60000);
   }
 
   async _loadData() {
     try {
-      const operaciones = await OperacionService.getInstance().getAll();
-      const operadores = await OperadorService.getInstance().getAll();
-      const puntos = await PuntoService.getInstance().getAll();
+      const rawOperaciones = await OperacionService.getInstance().getAll();
+      const rawOperadores = await OperadorService.getInstance().getAll();
+      const rawPuntos = await PuntoService.getInstance().getAll();
+      const operaciones = rawOperaciones.map(item => item.operacion || item);
+      const operadores = rawOperadores.map(item => item.operador || item);
+      const puntos = rawPuntos.map(item => item.punto || item);
 
       let data = operaciones.filter(op => {
         const matchSearch = op.codigo?.toUpperCase().includes(this._searchQuery);
-        const matchStatus = this._filterStatus === '' || op.estado === this._filterStatus;
+        const estadoNormalizado = op.estado ? op.estado.toUpperCase() : '';
+        const filtroNormalizado = this._filterStatus ? this._filterStatus.toUpperCase() : '';
+        const matchStatus = this._filterStatus === '' || estadoNormalizado === filtroNormalizado;
         return matchSearch && matchStatus;
       });
 
@@ -111,14 +122,54 @@ class TableroView {
         return 0;
       });
 
-      const salidas = data.filter(op => op.sentido.toLowerCase() === 'salida');
-      const llegadas = data.filter(op => op.sentido.toLowerCase() === 'llegada');
+      const salidas = data.filter(op => op.sentido && op.sentido.toLowerCase() === 'salida');
+      const llegadas = data.filter(op => op.sentido && op.sentido.toLowerCase() === 'llegada');
 
-      this._renderRows(this._container.querySelector('#tbody-salidas'), salidas, operadores, puntos, 'destino');
-      this._renderRows(this._container.querySelector('#tbody-llegadas'), llegadas, operadores, puntos, 'origen');
+      const tbodySalidas = document.getElementById('tbody-salidas');
+      const tbodyLlegadas = document.getElementById('tbody-llegadas');
+      
+      if (tbodySalidas) this._renderRows(tbodySalidas, salidas, operadores, puntos, 'destino');
+      if (tbodyLlegadas) this._renderRows(tbodyLlegadas, llegadas, operadores, puntos, 'origen');
     } catch (error) {
       console.error("Error al cargar el tablero:", error);
     }
+  }
+
+  async _showDetail(id) {
+    const rawOps = await OperacionService.getInstance().getAll();
+    const operaciones = rawOps.map(item => item.operacion || item);
+    
+    const op = operaciones.find(o => o.operacionId == id || o.id == id);
+    if (!op) return;
+
+    let opId = (typeof op.operador === 'object') ? op.operador.id : op.operadorId;
+    let ptId = (typeof op.punto === 'object') ? (op.punto.puntoId || op.punto.id) : op.puntoId;
+
+    const rawOperadores = await OperadorService.getInstance().getAll();
+    const rawPuntos = await PuntoService.getInstance().getAll();
+    
+    const operadores = rawOperadores.map(item => item.operador || item);
+    const puntos = rawPuntos.map(item => item.punto || item);
+
+    const operador = operadores.find(o => o.id == opId || o.operadorId == opId) || {};
+    const punto = puntos.find(p => p.puntoId == ptId || p.id == ptId) || {};
+
+    const html = `
+      <div class="detail-grid">
+        <div class="detail-field"><span class="detail-label">Identificador</span><span class="detail-value">${op.id || op.operacionId}</span></div>
+        <div class="detail-field"><span class="detail-label">Tipo</span><span class="detail-value uppercase">${op.tipo}</span></div>
+        <div class="detail-field"><span class="detail-label">Código</span><span class="detail-value text-accent">${op.codigo}</span></div>
+        <div class="detail-field"><span class="detail-label">Estado</span><span class="detail-value"><span class="badge badge-${op.estado.toUpperCase()}">${op.estado}</span></span></div>
+        <div class="detail-field"><span class="detail-label">Origen</span><span class="detail-value">${op.origen}</span></div>
+        <div class="detail-field"><span class="detail-label">Destino</span><span class="detail-value">${op.destino}</span></div>
+        <div class="detail-field"><span class="detail-label">Hora Programada</span><span class="detail-value">${new Date(op.horaProgramada).toLocaleString()}</span></div>
+        <div class="detail-field"><span class="detail-label">Hora Estimada</span><span class="detail-value">${new Date(op.horaEstimada).toLocaleString()}</span></div>
+        <div class="detail-field"><span class="detail-label">Operador</span><span class="detail-value">${operador.nombre || '---'} (${operador.siglas || '---'})</span></div>
+        <div class="detail-field"><span class="detail-label">Punto de Acceso</span><span class="detail-value">${punto.tipo || '---'}: ${punto.codigo || '---'}</span></div>
+      </div>
+    `;
+
+    Modal.open(html, `Detalle de Operación: ${op.codigo}`);
   }
 
   _renderRows(tbody, items, operadores, puntos, cityField) {
@@ -133,11 +184,15 @@ class TableroView {
     }
 
     tbody.innerHTML = items.map(op => {
-      let opId = (typeof op.operador === 'object') ? op.operador.id : op.operadorId;
-      let ptId = (typeof op.punto === 'object') ? op.punto.puntoId : op.puntoId;
+      const innerOp = op.operador?.operador || op.operador || {};
+      const innerPt = op.punto?.punto || op.punto || {};
+      
+      let opId = innerOp.id || op.operadorId;
+      let ptId = innerPt.puntoId || innerPt.id || op.puntoId;
 
       const operador = operadores.find(o => o.id == opId || o.operadorId == opId) || {};
-      const punto = puntos.find(p => p.puntoId == ptId) || {};
+      const punto = puntos.find(p => p.puntoId == ptId || p.id == ptId) || {};
+      
       const horaP = new Date(op.horaProgramada).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
       const horaE = new Date(op.horaEstimada).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
       const isDelayed = op.estado === 'RETRASADO';
@@ -159,7 +214,7 @@ class TableroView {
             </div>
           </td>
           <td>${punto.codigo || '---'}</td>
-          <td><span class="badge badge-${op.estado}">${op.estado}</span></td>
+          <td><span class="badge badge-${op.estado.toUpperCase()}">${op.estado}</span></td>
         </tr>
       `;
     }).join('');
@@ -170,24 +225,32 @@ class TableroView {
   }
 
   async _showDetail(id) {
-    const operaciones = await OperacionService.getInstance().getAll();
-    const op = operaciones.find(o => o.operacionId === id);
+    const rawOps = await OperacionService.getInstance().getAll();
+    const operaciones = rawOps.map(item => item.operacion || item);
+    const op = operaciones.find(o => o.operacionId === id || o.id === id);
     if (!op) return;
 
-    let opId = (typeof op.operador === 'object') ? op.operador.id : op.operadorId;
-    let ptId = (typeof op.punto === 'object') ? op.punto.puntoId : op.puntoId;
+    const innerOp = op.operador?.operador || op.operador || {};
+    const innerPt = op.punto?.punto || op.punto || {};
+      
+    let opId = innerOp.id || op.operadorId;
+    let ptId = innerPt.puntoId || innerPt.id || op.puntoId;
 
-    const operadores = await OperadorService.getInstance().getAll();
-    const puntos = await PuntoService.getInstance().getAll();
+    const rawOperadores = await OperadorService.getInstance().getAll();
+    const operadores = rawOperadores.map(item => item.operador || item);
+    
+    const rawPuntos = await PuntoService.getInstance().getAll();
+    const puntos = rawPuntos.map(item => item.punto || item);
+    
     const operador = operadores.find(o => o.id == opId || o.operadorId == opId) || {};
-    const punto = puntos.find(p => p.puntoId == ptId) || {};
+    const punto = puntos.find(p => p.puntoId == ptId || p.id == ptId) || {};
 
     const html = `
       <div class="detail-grid">
         <div class="detail-field"><span class="detail-label">Identificador</span><span class="detail-value">${op.operacionId}</span></div>
         <div class="detail-field"><span class="detail-label">Tipo</span><span class="detail-value uppercase">${op.tipo}</span></div>
         <div class="detail-field"><span class="detail-label">Código</span><span class="detail-value text-accent">${op.codigo}</span></div>
-        <div class="detail-field"><span class="detail-label">Estado</span><span class="detail-value"><span class="badge badge-${op.estado}">${op.estado}</span></span></div>
+        <div class="detail-field"><span class="detail-label">Estado</span><span class="detail-value"><span class="badge badge-${op.estado.toUpperCase()}">${op.estado}</span></span></div>
         <div class="detail-field"><span class="detail-label">Origen</span><span class="detail-value">${op.origen}</span></div>
         <div class="detail-field"><span class="detail-label">Destino</span><span class="detail-value">${op.destino}</span></div>
         <div class="detail-field"><span class="detail-label">Hora Programada</span><span class="detail-value">${new Date(op.horaProgramada).toLocaleString()}</span></div>

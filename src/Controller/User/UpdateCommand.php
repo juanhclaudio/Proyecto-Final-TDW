@@ -60,9 +60,9 @@ class UpdateCommand
             return Error::createResponse($response, StatusCode::STATUS_NOT_FOUND);
         }
 
-        $etag = md5(json_encode($userToModify) . $userToModify->getPassword());
-        if (!in_array($etag, $request->getHeader('If-Match'), true)) {
-            $this->entityManager->rollback();
+        $etag = md5((string) json_encode($userToModify));
+        $ifMatch = trim($request->getHeaderLine('If-Match'));
+        if (!empty($ifMatch) && $ifMatch !== $etag) {
             return Error::createResponse($response, StatusCode::STATUS_PRECONDITION_REQUIRED);
         }
 

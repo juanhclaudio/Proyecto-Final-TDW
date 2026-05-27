@@ -47,6 +47,10 @@ class StorageService {
         const decoded = this.parseJwt(token);
         if (!decoded) return null;
 
+        if (decoded.role) {
+            decoded.role = decoded.role.toUpperCase();
+        }
+
         return decoded;
     }
 }

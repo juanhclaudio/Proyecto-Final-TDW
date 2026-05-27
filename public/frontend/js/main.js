@@ -19,6 +19,10 @@
     eventBus.on('session:changed', () => {
       sessionView.render(document.getElementById('header-session'));
       _updateProtectedLinks();
+      
+      if (typeof updateAuthStateUI === 'function') {
+        updateAuthStateUI();
+      }
     });
 
     eventBus.on('toast', ({ type, message }) => {
@@ -26,6 +30,10 @@
     });
 
     _updateProtectedLinks();
+    if (typeof updateAuthStateUI === 'function') {
+      updateAuthStateUI();
+    }
+    
     router.start('tablero');
     _initModal();
     _initClock();
@@ -35,7 +43,7 @@
     const usuario = UsuarioService.getInstance().getUsuarioActual();
     document.querySelectorAll('.js-protected').forEach(link => {
       const requiredRole = link.dataset.role;
-      const hasAccess = usuario && usuario.rol === requiredRole;
+      const hasAccess = usuario && usuario.role && usuario.role.toUpperCase() === requiredRole.toUpperCase();
       link.classList.toggle('hidden', !hasAccess);
     });
   }

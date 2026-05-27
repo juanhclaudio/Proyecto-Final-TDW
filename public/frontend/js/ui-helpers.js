@@ -71,10 +71,10 @@ function updateAuthStateUI() {
     const loginLink = document.getElementById('nav-login');
     const logoutLink = document.getElementById('nav-logout');
 
-    const currentUser = StorageService.getCurrentUser();
+    const currentUser = StorageService.getInstance().getCurrentUser();
 
     if (currentUser) {
-        const identityString = currentUser.sub || currentUser.email || 'Active User'; 
+        const identityString = currentUser.email || currentUser.sub || 'Active User'; 
         
         if(userContainer) userContainer.innerHTML = `👤 <b>${identityString}</b>`;
         if(loginLink) loginLink.style.display = 'none';

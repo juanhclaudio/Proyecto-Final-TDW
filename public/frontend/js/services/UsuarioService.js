@@ -5,8 +5,6 @@ class UsuarioService {
   constructor() {
     if (UsuarioService._instance) return UsuarioService._instance;
     UsuarioService._instance = this;
-    
-    this._eventBus = window.EventBus ? window.EventBus.getInstance() : null;
   }
 
   static getInstance() {
@@ -33,7 +31,7 @@ class UsuarioService {
   }
 
   async login(username, password) {
-    const response = await ApiService.getInstance().fetchWithAuth('/access_token', {
+    const response = await fetch('/access_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
@@ -47,14 +45,14 @@ class UsuarioService {
     StorageService.getInstance().setToken(data.access_token);
     
     const user = StorageService.getInstance().getCurrentUser();
-    if (this._eventBus) this._eventBus.emit('session:changed', user);
+    EventBus.getInstance().emit('session:changed', user);
     
     return user;
   }
 
   logout() {
     StorageService.getInstance().removeToken();
-    if (this._eventBus) this._eventBus.emit('session:changed', null);
+    EventBus.getInstance().emit('session:changed', null);
   }
 
   getUsuarioActual() {
@@ -71,11 +69,11 @@ class UsuarioService {
       body: JSON.stringify(updateData)
     });
     
-    if (this._eventBus) this._eventBus.emit('usuarios:changed');
+    if (EventBus.getInstance()) EventBus.getInstance().emit('usuarios:changed');
     
     const actual = this.getUsuarioActual();
-    if (actual && actual.uid === id && this._eventBus) {
-       this._eventBus.emit('session:changed', actual);
+    if (actual && actual.uid === id && EventBus.getInstance()) {
+       EventBus.getInstance().emit('session:changed', actual);
     }
     
     return result;

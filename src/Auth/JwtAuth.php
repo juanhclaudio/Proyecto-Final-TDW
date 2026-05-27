@@ -69,9 +69,23 @@ final readonly class JwtAuth
             fn($role) => $user->hasRole($role),
         );
 
+        $primaryRole = in_array(Role::GESTOR->value, $userRoles, true) ? Role::GESTOR->value : Role::PUBLICO->value;
+
+        $now = new DateTimeImmutable('@' . time());
+
         $token = $this->config->builder()
+            ->issuedBy($this->issuer)
+            ->permittedFor($this->clientId)
+            ->identifiedBy(Uuid::v4()->toRfc4122())
+            ->issuedAt($now)
+            ->canOnlyBeUsedAfter($now)
+            ->expiresAt($now->modify('+' . $this->lifetime . ' seconds'))
+            ->relatedTo((string) $user->getId()) 
             ->withClaim('scopes', array_values($awardedScopes))
-            ->withClaim('role', $user->getRoles()[0]->value)
+            ->withClaim('role', $primaryRole)
+            ->withClaim('email', $user->getEmail()) 
+            ->withClaim('uid', $user->getId())
+            ->withClaim('id', $user->getId()) 
             ->getToken($this->config->signer(), $this->config->signingKey());
 
         return $token;

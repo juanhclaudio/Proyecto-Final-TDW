@@ -63,9 +63,9 @@ class SpotCommandController
             return Error::createResponse($response, StatusCode::STATUS_NOT_FOUND);
         }
 
-        
         $etag = md5((string) json_encode($punto));
-        if ($request->getHeaderLine('If-Match') !== $etag) {
+        $ifMatch = trim($request->getHeaderLine('If-Match'));
+        if (!empty($ifMatch) && $ifMatch !== $etag) {
             return Error::createResponse($response, StatusCode::STATUS_PRECONDITION_REQUIRED);
         }
 

@@ -8,13 +8,18 @@ class AdminView {
     this._container = container;
     this._renderLayout();
     this._loadSection();
+    const eb = EventBus.getInstance();
+    eb.off('operaciones:changed', this._onOperacionesChanged);
+    eb.off('operadores:changed', this._onOperadoresChanged);
+    eb.off('puntos:changed', this._onPuntosChanged);
 
-    if (window.EventBus) {
-      const eb = window.EventBus.getInstance();
-      eb.on('operaciones:changed', () => { if (this._currentSection === 'operaciones') this._loadSection(); });
-      eb.on('operadores:changed', () => { if (this._currentSection === 'operadores') this._loadSection(); });
-      eb.on('puntos:changed', () => { if (this._currentSection === 'puntos') this._loadSection(); });
-    }
+    this._onOperacionesChanged = () => { if (this._currentSection === 'operaciones') this._loadSection(); };
+    this._onOperadoresChanged = () => { if (this._currentSection === 'operadores') this._loadSection(); };
+    this._onPuntosChanged = () => { if (this._currentSection === 'puntos') this._loadSection(); };
+
+    eb.on('operaciones:changed', this._onOperacionesChanged);
+    eb.on('operadores:changed', this._onOperadoresChanged);
+    eb.on('puntos:changed', this._onPuntosChanged);
   }
 
   _renderLayout() {
@@ -53,7 +58,9 @@ class AdminView {
   }
 
   async _renderOperaciones(container) {
-    const data = await OperacionService.getInstance().getAll();
+    const rawData = await OperacionService.getInstance().getAll();
+    const data = rawData.map(op => op.operacion || op);
+
     container.innerHTML = `
       <div class="page-header">
         <h2 class="page-title">Gestión de Operaciones</h2>
@@ -67,10 +74,10 @@ class AdminView {
               <td class="op-code">${op.codigo}</td>
               <td class="uppercase">${op.tipo}</td>
               <td class="uppercase">${op.sentido}</td>
-              <td><span class="badge badge-${op.estado}">${op.estado}</span></td>
+              <td><span class="badge badge-${op.estado.toLowerCase()}">${op.estado}</span></td>
               <td class="table-actions">
-                <button class="btn btn-secondary btn-sm js-edit-op" data-id="${op.operacionId}">Editar</button>
-                <button class="btn btn-danger btn-sm js-delete-op" data-id="${op.operacionId}">Eliminar</button>
+                <button class="btn btn-secondary btn-sm js-edit-op" data-id="${op.operacionId || op.id}">Editar</button>
+                <button class="btn btn-danger btn-sm js-delete-op" data-id="${op.operacionId || op.id}">Eliminar</button>
               </td>
             </tr>
           `).join('')}
@@ -83,19 +90,20 @@ class AdminView {
     container.querySelectorAll('.js-delete-op').forEach(btn => btn.onclick = async () => {
       if (confirm('¿Deseas eliminar esta operación?')) {
         await OperacionService.getInstance().delete(btn.dataset.id);
-        if(window.Toast) window.Toast.show('Eliminada', 'success');
+        Toast.show('Eliminada', 'success');
+        EventBus.getInstance().emit('operaciones:changed');
       }
     });
   }
 
   async _formOperacion(id = null) {
-    const ops = await OperadorService.getInstance().getAll();
-    const pts = await PuntoService.getInstance().getAll();
+    const ops = (await OperadorService.getInstance().getAll()).map(o => o.operador || o);
+    const pts = (await PuntoService.getInstance().getAll()).map(p => p.punto || p);
     
     let op = null;
     if (id) {
-      const allOps = await OperacionService.getInstance().getAll();
-      op = allOps.find(o => o.operacionId === id);
+      const allOps = (await OperacionService.getInstance().getAll()).map(o => o.operacion || o);
+      op = allOps.find(o => o.operacionId === id || o.id === id);
     }
 
     const html = `
@@ -126,7 +134,7 @@ class AdminView {
         <div class="form-group"><label class="form-label">Estado</label>
           <select id="op-estado" class="form-select">
             ${['PROGRAMADO', 'EMBARCANDO', 'RETRASADO', 'CANCELADO', 'EN_RUTA', 'LLEGADO'].map(e => `
-              <option value="${e}" ${op?.estado === e ? 'selected' : ''}>${e}</option>
+              <option value="${e}" ${op?.estado?.toUpperCase() === e ? 'selected' : ''}>${e}</option>
             `).join('')}
           </select>
         </div>
@@ -135,15 +143,17 @@ class AdminView {
             <select id="op-operador" class="form-select">
               ${ops.map(o => {
                 let opId = op ? (typeof op.operador === 'object' ? op.operador.id : op.operadorId) : null;
-                return `<option value="${o.id || o.operadorId}" ${opId == (o.id || o.operadorId) ? 'selected' : ''}>${o.nombre}</option>`;
+                let loopId = o.id || o.operadorId;
+                return `<option value="${loopId}" ${opId == loopId ? 'selected' : ''}>${o.nombre}</option>`;
               }).join('')}
             </select>
           </div>
           <div class="form-group"><label class="form-label">Punto Acceso</label>
             <select id="op-punto" class="form-select">
               ${pts.map(p => {
-                let ptId = op ? (typeof op.punto === 'object' ? op.punto.puntoId : op.puntoId) : null;
-                return `<option value="${p.puntoId}" ${ptId == p.puntoId ? 'selected' : ''}>${p.codigo}</option>`;
+                let ptId = op ? (typeof op.punto === 'object' ? (op.punto.puntoId || op.punto.id) : op.puntoId) : null;
+                let loopPtId = p.puntoId || p.id;
+                return `<option value="${loopPtId}" ${ptId == loopPtId ? 'selected' : ''}>${p.codigo}</option>`;
               }).join('')}
             </select>
           </div>
@@ -152,36 +162,40 @@ class AdminView {
       </form>
     `;
 
-    window.Modal.open(html, id ? 'Editar Operación' : 'Nueva Operación');
+    Modal.open(html, id ? 'Editar Operación' : 'Nueva Operación');
 
     document.getElementById('form-op').onsubmit = async (e) => {
       e.preventDefault();
       const payload = {
-        operacionId: id,
         codigo: document.getElementById('op-codigo').value,
-        tipo: document.getElementById('op-tipo').value,
-        sentido: document.getElementById('op-sentido').value,
+        tipo: document.getElementById('op-tipo').value.toLowerCase(),
+        sentido: document.getElementById('op-sentido').value.toLowerCase(),
         origen: document.getElementById('op-origen').value,
         destino: document.getElementById('op-destino').value,
         horaProgramada: new Date(document.getElementById('op-hprog').value).toISOString(),
         horaEstimada: new Date(document.getElementById('op-hest').value).toISOString(),
-        estado: document.getElementById('op-estado').value,
+        estado: document.getElementById('op-estado').value.toLowerCase(),
         operadorId: parseInt(document.getElementById('op-operador').value),
         puntoId: parseInt(document.getElementById('op-punto').value)
       };
+
+      if (id) payload.operacionId = id;
       
       try {
         await OperacionService.getInstance().save(payload);
-        window.Modal.close();
-        if(window.Toast) window.Toast.show('Guardado exitosamente', 'success');
+        Modal.close();
+        Toast.show('Guardado exitosamente', 'success');
+        EventBus.getInstance().emit('operaciones:changed');
       } catch (err) {
-        if(window.Toast) window.Toast.show('Error al guardar', 'error');
+        Toast.show('Error al guardar', 'error');
       }
     };
   }
 
   async _renderOperadores(container) {
-    const data = await OperadorService.getInstance().getAll();
+    const rawData = await OperadorService.getInstance().getAll();
+    const data = rawData.map(o => o.operador || o);
+    
     container.innerHTML = `
       <div class="page-header">
         <h2 class="page-title">Gestión de Operadores</h2>
@@ -209,6 +223,8 @@ class AdminView {
     container.querySelectorAll('.js-delete-opr').forEach(btn => btn.onclick = async () => {
       if (confirm('¿Eliminar operador?')) {
         await OperadorService.getInstance().delete(btn.dataset.id);
+        Toast.show('Eliminado', 'success');
+        EventBus.getInstance().emit('operadores:changed');
       }
     });
   }
@@ -216,7 +232,7 @@ class AdminView {
   async _formOperador(id = null) {
     let obj = null;
     if (id) {
-      const ops = await OperadorService.getInstance().getAll();
+      const ops = (await OperadorService.getInstance().getAll()).map(o => o.operador || o);
       obj = ops.find(o => o.id == id || o.operadorId == id);
     }
 
@@ -230,7 +246,7 @@ class AdminView {
         <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="Modal.close()">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
       </form>
     `;
-    window.Modal.open(html, 'Datos del Operador');
+    Modal.open(html, obj ? 'Editar Operador' : 'Nuevo Operador');
     document.getElementById('form-opr').onsubmit = async (e) => {
       e.preventDefault();
       await OperadorService.getInstance().save({
@@ -240,13 +256,16 @@ class AdminView {
         color: document.getElementById('opr-color').value,
         urlIcono: ''
       });
-      window.Modal.close();
-      if(window.Toast) window.Toast.show('Operador guardado', 'success');
+      Modal.close();
+      Toast.show('Operador guardado', 'success');
+      EventBus.getInstance().emit('operadores:changed');
     };
   }
 
   async _renderPuntos(container) {
-    const data = await PuntoService.getInstance().getAll();
+    const rawData = await PuntoService.getInstance().getAll();
+    const data = rawData.map(p => p.punto || p);
+    
     container.innerHTML = `
       <div class="page-header">
         <h2 class="page-title">Gestión de Puntos</h2>
@@ -260,8 +279,8 @@ class AdminView {
               <td>${p.tipo}</td>
               <td>${p.codigo}</td>
               <td class="table-actions">
-                <button class="btn btn-secondary btn-sm js-edit-p" data-id="${p.puntoId}">Editar</button>
-                <button class="btn btn-danger btn-sm js-delete-p" data-id="${p.puntoId}">Eliminar</button>
+                <button class="btn btn-secondary btn-sm js-edit-p" data-id="${p.puntoId || p.id}">Editar</button>
+                <button class="btn btn-danger btn-sm js-delete-p" data-id="${p.puntoId || p.id}">Eliminar</button>
               </td>
             </tr>
           `).join('')}
@@ -271,15 +290,19 @@ class AdminView {
     container.querySelector('#btn-new-p').onclick = () => this._formPunto();
     container.querySelectorAll('.js-edit-p').forEach(btn => btn.onclick = () => this._formPunto(btn.dataset.id));
     container.querySelectorAll('.js-delete-p').forEach(btn => btn.onclick = async () => {
-      if (confirm('¿Eliminar punto?')) await PuntoService.getInstance().delete(btn.dataset.id);
+      if (confirm('¿Eliminar punto?')) {
+        await PuntoService.getInstance().delete(btn.dataset.id);
+        Toast.show('Eliminado', 'success');
+        EventBus.getInstance().emit('puntos:changed');
+      }
     });
   }
 
   async _formPunto(id = null) {
     let obj = null;
     if (id) {
-      const pts = await PuntoService.getInstance().getAll();
-      obj = pts.find(p => p.puntoId == id);
+      const pts = (await PuntoService.getInstance().getAll()).map(p => p.punto || p);
+      obj = pts.find(p => p.puntoId == id || p.id == id);
     }
     const html = `
       <form id="form-p">
@@ -294,7 +317,7 @@ class AdminView {
         <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="Modal.close()">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
       </form>
     `;
-    window.Modal.open(html, 'Datos del Punto de Acceso');
+    Modal.open(html, obj ? 'Editar Punto' : 'Nuevo Punto');
     document.getElementById('form-p').onsubmit = async (e) => {
       e.preventDefault();
       await PuntoService.getInstance().save({
@@ -302,8 +325,9 @@ class AdminView {
         tipo: document.getElementById('p-tipo').value,
         codigo: document.getElementById('p-codigo').value
       });
-      window.Modal.close();
-      if(window.Toast) window.Toast.show('Punto guardado', 'success');
+      Modal.close();
+      Toast.show('Punto guardado', 'success');
+      EventBus.getInstance().emit('puntos:changed');
     };
   }
 }

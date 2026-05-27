@@ -41,7 +41,7 @@ class Router {
     
     if (route.roles && route.roles.length > 0) {
       const usuario = UsuarioService.getInstance().getUsuarioActual();
-      if (!usuario || !route.roles.includes(usuario.rol)) {
+      if (!usuario || !route.roles.includes(usuario.role)) {
         EventBus.getInstance().emit('toast', {
           type: 'error',
           message: 'Acceso denegado. Inicia sesión con los permisos adecuados.'

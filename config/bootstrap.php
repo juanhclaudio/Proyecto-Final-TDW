@@ -23,13 +23,8 @@ try {
     exit(1);
 }
 
-// Register routes
 (require __DIR__ . '/routes.php')($app);
-(require __DIR__ . '/routesUsers.php')($app);
-(require __DIR__ . '/routesOperators.php')($app);
-(require __DIR__ . '/routesSpots.php')($app);
-(require __DIR__ . '/routesOperations.php')($app);
-// Register middleware
+
 (require __DIR__ . '/middleware.php')($app);
 
 return $app;

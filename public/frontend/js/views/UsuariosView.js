@@ -16,7 +16,9 @@ class UsuariosView {
 
   async _renderTable() {
     try {
-      const usuarios = await UsuarioService.getInstance().getUsuarios();
+      const rawUsuarios = await UsuarioService.getInstance().getUsuarios();
+      console.log("Datos RAW de Usuarios:", rawUsuarios);
+      const usuarios = rawUsuarios.map(u => u.user || u);
 
       this._container.innerHTML = `
         <header class="page-header">
@@ -30,7 +32,7 @@ class UsuariosView {
                 ${usuarios.map(user => `
                   <tr>
                     <td class="font-bold">${user.email}</td>
-                    <td><span class="badge badge-${user.role}">${user.role}</span></td>
+                    <td><span class="badge badge-${user.role.toLowerCase()}">${user.role}</span></td>
                     <td class="table-actions">
                       ${user.role === 'PUBLICO' 
                         ? `<button class="btn btn-primary btn-sm js-promote" data-id="${user.id}">Promover a GESTOR</button>`
@@ -60,13 +62,22 @@ class UsuariosView {
     });
   }
 
-  async _updateUserRole(id, nuevoRol) {
+  async _updateUserRole(id, newRole) {
     try {
-      await UsuarioService.getInstance().updateUsuario(id, { role: nuevoRol });
-      if (window.Toast) window.Toast.show(`Rol actualizado a ${nuevoRol}`, 'success');
-      this._renderTable(); 
+      const rawUsuarios = await UsuarioService.getInstance().getUsuarios();
+      const usuarios = rawUsuarios.map(u => u.user || u);
+      const user = usuarios.find(u => u.id == id);
+      if (!user) return;
+      user.role = newRole;
+      await UsuarioService.getInstance().updateUsuario(id, user);
+      if (typeof Toast !== 'undefined') Toast.show('Rol actualizado correctamente', 'success');
+      this._renderTable();
     } catch (err) {
-      if (window.Toast) window.Toast.show(err.message, 'error');
+      if (err.message.includes('428')) {
+        alert('El registro fue modificado por otra persona. Refresque la página.');
+      } else {
+        console.error("Error actualizando rol:", err);
+      }
     }
   }
 }

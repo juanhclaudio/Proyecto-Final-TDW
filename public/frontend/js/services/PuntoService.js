@@ -3,7 +3,6 @@ class PuntoService {
   constructor() {
     if (PuntoService._instance) return PuntoService._instance;
     PuntoService._instance = this;
-    this._eventBus = window.EventBus ? window.EventBus.getInstance() : null;
   }
 
   static getInstance() {
@@ -38,12 +37,12 @@ class PuntoService {
         body: JSON.stringify(data)
       });
     }
-    if (this._eventBus) this._eventBus.emit('puntos:changed', await this.getAll());
+    if (EventBus.getInstance()) EventBus.getInstance().emit('puntos:changed', await this.getAll());
     return result;
   }
   
   async delete(id) {
     await ApiService.getInstance().fetchWithAuth(`/spots/${id}`, { method: 'DELETE' });
-    if (this._eventBus) this._eventBus.emit('puntos:changed', await this.getAll());
+    if (EventBus.getInstance()) EventBus.getInstance().emit('puntos:changed', await this.getAll());
   }
 }

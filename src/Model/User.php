@@ -217,10 +217,10 @@ class User implements JsonSerializable, Stringable
      */
     public function getRoles(): array
     {
-        return array_filter(
+        return array_values(array_filter(
             Role::cases(),
             fn($myRole) => $this->hasRole($myRole)
-        );
+        ));
     }
 
     /**

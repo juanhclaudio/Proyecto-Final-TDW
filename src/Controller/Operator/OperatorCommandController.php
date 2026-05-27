@@ -106,8 +106,8 @@ class OperatorCommandController
 
         // Optimistic Locking (strong validation) - https://httpwg.org/specs/rfc6585.html#status-428
         $etag = md5((string) json_encode($element));
-        $ifMatch = trim(current($request->getHeader('If-Match')));
-        if ($ifMatch !== $etag) {
+        $ifMatch = trim($request->getHeaderLine('If-Match'));
+        if (!empty($ifMatch) && $ifMatch !== $etag) {
             $this->entityManager->rollback();
             return Error::createResponse($response, StatusCode::STATUS_PRECONDITION_REQUIRED);   // 428
         }

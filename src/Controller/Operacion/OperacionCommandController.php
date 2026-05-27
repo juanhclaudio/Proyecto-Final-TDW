@@ -85,7 +85,8 @@ class OperacionCommandController
 
         
         $etag = md5((string) json_encode($operacion));
-        if ($request->getHeaderLine('If-Match') !== $etag) {
+        $clientEtag = $request->getHeaderLine('If-Match');
+        if (!empty($clientEtag) && $clientEtag !== $etag) {
             return Error::createResponse($response, StatusCode::STATUS_PRECONDITION_REQUIRED);
         }
 
