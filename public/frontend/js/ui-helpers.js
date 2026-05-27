@@ -65,3 +65,23 @@ const Toast = (() => {
 
   return { show };
 })();
+
+function updateAuthStateUI() {
+    const userContainer = document.getElementById('active-user-display'); 
+    const loginLink = document.getElementById('nav-login');
+    const logoutLink = document.getElementById('nav-logout');
+
+    const currentUser = StorageService.getCurrentUser();
+
+    if (currentUser) {
+        const identityString = currentUser.sub || currentUser.email || 'Active User'; 
+        
+        if(userContainer) userContainer.innerHTML = `👤 <b>${identityString}</b>`;
+        if(loginLink) loginLink.style.display = 'none';
+        if(logoutLink) logoutLink.style.display = 'block';
+    } else {
+        if(userContainer) userContainer.innerHTML = '';
+        if(loginLink) loginLink.style.display = 'block';
+        if(logoutLink) logoutLink.style.display = 'none';
+    }
+}

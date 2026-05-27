@@ -3,6 +3,7 @@
 use Doctrine\ORM\EntityManager;
 use Lcobucci\Clock\SystemClock;
 use Lcobucci\JWT\Signer;
+use Lcobucci\JWT\Signer\Hmac\Sha256; // Cambiado a HMAC
 use Lcobucci\JWT\Signer\Key\InMemory;
 use Lcobucci\JWT\Validation\Constraint\{HasClaim, IssuedBy, PermittedFor, SignedWith, StrictValidAt};
 use Monolog\Formatter\LineFormatter;
@@ -18,60 +19,44 @@ use TDW\IPanel\Auth\JwtAuth;
 use TDW\IPanel\Utility\DoctrineConnector;
 
 return [
-    // Application settings
     'settings' => fn() => require __DIR__ . '/settings.php',
 
     App::class => function (ContainerInterface $container) {
         AppFactory::setContainer($container);
-
         return AppFactory::create();
     },
 
-    // HTTP factories
-    ResponseFactoryInterface::class => function (ContainerInterface $container) {
-        return $container->get(App::class)->getResponseFactory();
-    },
+    ResponseFactoryInterface::class => fn(ContainerInterface $container) => $container->get(App::class)->getResponseFactory(),
 
-    // The Slim RouterParser
-    RouteParserInterface::class => function (ContainerInterface $container) {
-        return $container->get(App::class)->getRouteCollector()->getRouteParser();
-    },
+    RouteParserInterface::class => fn(ContainerInterface $container) => $container->get(App::class)->getRouteCollector()->getRouteParser(),
 
     LoggerInterface::class => function (ContainerInterface $container) {
         $settings = $container->get('settings')['logger'];
         $logger = new Logger('app');
-
         $filename = sprintf('%s/app.log', $settings['path']);
-        $level = $settings['level'];
-        $rotatingFileHandler = new RotatingFileHandler($filename, 0, $level, true, 0777);
+        $rotatingFileHandler = new RotatingFileHandler($filename, 0, $settings['level'], true, 0777);
         $rotatingFileHandler->setFormatter(new LineFormatter(null, null, false, true));
         $logger->pushHandler($rotatingFileHandler);
-
         return $logger;
     },
 
     EntityManager::class => DoctrineConnector::getEntityManager(),
 
-    // And add this entry
     JwtAuth::class => function (ContainerInterface $container) {
         $settings = $container->get('settings');
-
         $issuer = $settings['jwt']['issuer'];
         $clientId = $settings['jwt']['client-id'];
         $lifetime = $settings['jwt']['lifetime'];
-        $privateKeyFile = $settings['jwt']['private_key_file'];
-        $publicKeyFile = $settings['jwt']['public_key_file'];
-        $secretPhrase = $settings['app']['secret'];
+        
+        $key = InMemory::plainText($_ENV['JWT_SECRET']);
+        $signer = new Sha256();
 
-        $jwtConfig = Lcobucci\JWT\Configuration::forAsymmetricSigner(
-            // You may use RSA or ECDSA and all their variations (256, 384, and 512) and EdDSA over Curve25519
-            new Signer\Ecdsa\Sha256(),
-            InMemory::file($privateKeyFile),
-            InMemory::base64Encoded($secretPhrase)
-        )->withValidationConstraints(
+        $jwtConfig = Lcobucci\JWT\Configuration::forSymmetricSigner($signer, $key);
+
+        $jwtConfig->setValidationConstraints(
             new IssuedBy($issuer),
             new PermittedFor($clientId),
-            new SignedWith(new Signer\Ecdsa\Sha256(), InMemory::file($publicKeyFile)),
+            new SignedWith($signer, $key),
             new StrictValidAt(SystemClock::fromSystemTimezone()),
             new HasClaim('uid'),
             new HasClaim('email'),

@@ -17,26 +17,35 @@ class LoginView {
               <label class="form-label">Contraseña</label>
               <input type="password" id="login-password" class="form-input" required>
             </div>
-            <button type="submit" class="btn btn-primary btn-full">Entrar</button>
+            <button type="submit" id="login-submit-btn" class="btn btn-primary btn-full">Entrar</button>
           </form>
           <div class="auth-footer">
-            ¿No tienes cuenta? <a id="go-to-register">Regístrate aquí</a>
+            ¿No tienes cuenta? <a id="go-to-register" style="cursor:pointer; color:blue;">Regístrate aquí</a>
           </div>
         </div>
       </div>
     `;
 
-    container.querySelector('#login-form').addEventListener('submit', (e) => {
+    container.querySelector('#login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('login-email').value;
       const pass = document.getElementById('login-password').value;
+      const submitBtn = document.getElementById('login-submit-btn');
 
       try {
-        UsuarioService.getInstance().login(email, pass);
-        new Router().navigate('tablero');
-        Toast.show('Acceso concedido', 'success');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Verificando...';
+        
+        await UsuarioService.getInstance().login(email, pass);
+        
+        if (window.Toast) window.Toast.show('Acceso concedido', 'success');
+        new Router().navigate('tablero'); 
       } catch (err) {
-        Toast.show(err.message, 'error');
+        if (window.Toast) window.Toast.show(err.message, 'error');
+        else alert(err.message);
+        
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Entrar';
       }
     });
 

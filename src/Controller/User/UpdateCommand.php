@@ -18,17 +18,12 @@ use TDW\IPanel\Model\User;
 use TDW\IPanel\Utility\Error;
 use Throwable;
 
-/**
- * Class UpdateCommand
- */
 class UpdateCommand
 {
     use TraitController;
 
-    /** @var string ruta api gestión usuarios  */
     public const string PATH_USERS = '/users';
 
-    // constructor receives container instance
     public function __construct(
         private readonly ORM\EntityManager $entityManager
     ) { }
@@ -36,15 +31,6 @@ class UpdateCommand
     /**
      * PUT /api/v1/users/{userId}
      *
-     * Summary: Updates a user
-     * - A PUBLICO user can only modify their own properties
-     * - A PUBLICO user cannot modify his ROLE
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array<non-empty-string,non-empty-string> $args
-     *
-     * @return Response
      * @throws ORM\Exception\ORMException
      */
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -52,78 +38,90 @@ class UpdateCommand
         assert($request->getMethod() === 'PUT');
         $isGestor = $this->checkGestorScope($request);
         $userRequestId = $this->getUserId($request);
-        if (!$isGestor && intval($args['userId']) !== $userRequestId) {
-            return Error::createResponse($response, StatusCode::STATUS_NOT_FOUND); // 403 => 404 por seguridad
+        
+        $targetUserId = intval($args['userId'] ?? 0);
+
+        if (!$isGestor && $targetUserId !== $userRequestId) {
+            return Error::createResponse($response, StatusCode::STATUS_NOT_FOUND); 
         }
 
-        // Check the userId range: 2147483647 > userId > 0
-        if (!$this->verifyInputId(intval($args['userId']))) { // 404
+        if (!$this->verifyInputId($targetUserId)) { 
             return Error::createResponse($response, StatusCode::STATUS_NOT_FOUND);
         }
 
-        /** @var array<string, string> $req_data */
+        /** @var array<string, mixed> $req_data */
         $req_data = $request->getParsedBody() ?? [];
         $this->entityManager->beginTransaction();
-        /** @var User|null $userToModify */
-        $userToModify = $this->entityManager->getRepository(User::class)->find($args['userId']);
+        
+        $userToModify = $this->entityManager->getRepository(User::class)->find($targetUserId);
 
-        // Check whether the user exists
-        if (!$userToModify instanceof User) {    // 404
+        if (!$userToModify instanceof User) {   
             $this->entityManager->rollback();
             return Error::createResponse($response, StatusCode::STATUS_NOT_FOUND);
         }
 
-        // Optimistic Locking (strong validation) - https://httpwg.org/specs/rfc6585.html#status-428
         $etag = md5(json_encode($userToModify) . $userToModify->getPassword());
         if (!in_array($etag, $request->getHeader('If-Match'), true)) {
             $this->entityManager->rollback();
-            return Error::createResponse($response, StatusCode::STATUS_PRECONDITION_REQUIRED);   // 428
+            return Error::createResponse($response, StatusCode::STATUS_PRECONDITION_REQUIRED);
         }
 
-        // Checks whether the user with _email_ already exists
-        if (array_key_exists('email', $req_data) && $this->verifyStringInput($req_data['email'], 60)) {
+        if (isset($req_data['email']) && is_string($req_data['email']) && $this->verifyStringInput($req_data['email'], 60)) {
             $usuarioId = $this->findByAttribute(
                 $this->entityManager->getRepository(User::class),
                 'email',
                 $req_data['email']
             );
-            if (($usuarioId !== 0) && intval($args['userId']) !== $usuarioId) {
+            if (($usuarioId !== 0) && $targetUserId !== $usuarioId) {
                 $this->entityManager->rollback();
-                // 400 BAD_REQUEST: e-mail already exists
                 return Error::createResponse($response, StatusCode::STATUS_BAD_REQUEST);
             }
             $userToModify->setEmail($req_data['email']);
         }
         $this->updatePassword($req_data, $userToModify);
 
-        // Update role
-        if ($isGestor && isset($req_data['role'])) {
-            try {
-                $userToModify->setRole($req_data['role']);
-            } catch (Throwable) {    // 400 BAD_REQUEST: unexpected role
-                $this->entityManager->rollback();
-                return Error::createResponse($response, StatusCode::STATUS_BAD_REQUEST);
+        // Standard profile updates (Available to owner or Gestor)
+        try {
+            if (isset($req_data['nombre']) && is_string($req_data['nombre'])) {
+                $userToModify->setNombre(substr($req_data['nombre'], 0, 120));
             }
+            if (isset($req_data['apellidos']) && is_string($req_data['apellidos'])) {
+                $userToModify->setApellidos(substr($req_data['apellidos'], 0, 120));
+            }
+            if (isset($req_data['fechaNacimiento']) && is_string($req_data['fechaNacimiento'])) {
+                $userToModify->setFechaNacimiento(new \DateTime($req_data['fechaNacimiento']));
+            }
+            if (isset($req_data['urlsInteres']) && is_array($req_data['urlsInteres'])) {
+                $urls = array_filter($req_data['urlsInteres'], 'is_string');
+                $userToModify->setUrlsInteres(array_values($urls));
+            }
+
+            // GESTOR ONLY operations
+            if ($isGestor) {
+                if (isset($req_data['role']) && is_string($req_data['role'])) {
+                    $userToModify->setRole($req_data['role']);
+                }
+                if (isset($req_data['activo'])) {
+                    $userToModify->setActivo((bool) $req_data['activo']);
+                }
+            }
+        } catch (Throwable) {    
+            $this->entityManager->rollback();
+            return Error::createResponse($response, StatusCode::STATUS_BAD_REQUEST);
         }
 
         $this->entityManager->flush();
         $this->entityManager->commit();
 
-        return $response
-            ->withJson($userToModify, 209);
+        return $response->withJson($userToModify, 209);
     }
 
     /**
-     * Update the user's password
-     *
-     * @param array<string, string> $req_data
-     * @param User $userToModify
-     * @return void
+     * @param array<string, mixed> $req_data
      */
     private function updatePassword(array $req_data, User $userToModify): void
     {
-        // Update password
-        if (array_key_exists('password', $req_data)) {
+        if (isset($req_data['password']) && is_string($req_data['password'])) {
             $userToModify->setPassword($req_data['password']);
         }
     }

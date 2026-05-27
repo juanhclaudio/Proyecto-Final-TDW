@@ -2,7 +2,6 @@
   'use strict';
 
   function initApp() {
-    Seed.init();
 
     const eventBus = EventBus.getInstance();
     const sessionView = new SessionView();

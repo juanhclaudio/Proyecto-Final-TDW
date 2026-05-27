@@ -9,10 +9,12 @@ class AdminView {
     this._renderLayout();
     this._loadSection();
 
-    const eb = EventBus.getInstance();
-    eb.on('operaciones:changed', () => { if (this._currentSection === 'operaciones') this._loadSection(); });
-    eb.on('operadores:changed', () => { if (this._currentSection === 'operadores') this._loadSection(); });
-    eb.on('puntos:changed', () => { if (this._currentSection === 'puntos') this._loadSection(); });
+    if (window.EventBus) {
+      const eb = window.EventBus.getInstance();
+      eb.on('operaciones:changed', () => { if (this._currentSection === 'operaciones') this._loadSection(); });
+      eb.on('operadores:changed', () => { if (this._currentSection === 'operadores') this._loadSection(); });
+      eb.on('puntos:changed', () => { if (this._currentSection === 'puntos') this._loadSection(); });
+    }
   }
 
   _renderLayout() {
@@ -26,7 +28,7 @@ class AdminView {
             <div class="sidebar-nav-link ${this._currentSection === 'puntos' ? 'active' : ''}" data-section="puntos">Puertas / Vías</div>
           </nav>
         </aside>
-        <section class="view-content" id="admin-content"></section>
+        <section class="view-content" id="admin-content">Cargando...</section>
       </div>
     `;
 
@@ -40,37 +42,30 @@ class AdminView {
     });
   }
 
-  _loadSection() {
+  async _loadSection() {
     const content = document.getElementById('admin-content');
     if (!content) return;
+    content.innerHTML = 'Cargando datos...';
 
-    if (this._currentSection === 'operaciones') this._renderOperaciones(content);
-    else if (this._currentSection === 'operadores') this._renderOperadores(content);
-    else if (this._currentSection === 'puntos') this._renderPuntos(content);
+    if (this._currentSection === 'operaciones') await this._renderOperaciones(content);
+    else if (this._currentSection === 'operadores') await this._renderOperadores(content);
+    else if (this._currentSection === 'puntos') await this._renderPuntos(content);
   }
 
-  _renderOperaciones(container) {
-    const data = OperacionService.getInstance().getAll();
+  async _renderOperaciones(container) {
+    const data = await OperacionService.getInstance().getAll();
     container.innerHTML = `
       <div class="page-header">
         <h2 class="page-title">Gestión de Operaciones</h2>
         <button class="btn btn-primary btn-sm" id="btn-new-op">+ Nueva Operación</button>
       </div>
       <table class="data-table">
-        <thead>
-          <tr>
-            <th>Código</th>
-            <th>Tipo</th>
-            <th>Sentido</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Código</th><th>Tipo</th><th>Sentido</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>
           ${data.map(op => `
             <tr>
               <td class="op-code">${op.codigo}</td>
-              <td><span class="badge badge-${op.tipo}">${op.tipo}</span></td>
+              <td class="uppercase">${op.tipo}</td>
               <td class="uppercase">${op.sentido}</td>
               <td><span class="badge badge-${op.estado}">${op.estado}</span></td>
               <td class="table-actions">
@@ -85,60 +80,50 @@ class AdminView {
 
     container.querySelector('#btn-new-op').onclick = () => this._formOperacion();
     container.querySelectorAll('.js-edit-op').forEach(btn => btn.onclick = () => this._formOperacion(btn.dataset.id));
-    container.querySelectorAll('.js-delete-op').forEach(btn => btn.onclick = () => {
-      if (confirm('¿Deseas eliminar esta operación?')) OperacionService.getInstance().delete(btn.dataset.id);
+    container.querySelectorAll('.js-delete-op').forEach(btn => btn.onclick = async () => {
+      if (confirm('¿Deseas eliminar esta operación?')) {
+        await OperacionService.getInstance().delete(btn.dataset.id);
+        if(window.Toast) window.Toast.show('Eliminada', 'success');
+      }
     });
   }
 
-  _formOperacion(id = null) {
-    const ops = OperadorService.getInstance().getAll();
-    const pts = PuntoService.getInstance().getAll();
-    const op = id ? OperacionService.getInstance().getAll().find(o => o.operacionId === id) : null;
+  async _formOperacion(id = null) {
+    const ops = await OperadorService.getInstance().getAll();
+    const pts = await PuntoService.getInstance().getAll();
+    
+    let op = null;
+    if (id) {
+      const allOps = await OperacionService.getInstance().getAll();
+      op = allOps.find(o => o.operacionId === id);
+    }
 
     const html = `
       <form id="form-op">
-        <div class="form-group">
-          <label class="form-label">Código</label>
-          <input type="text" id="op-codigo" class="form-input" value="${op?.codigo || ''}" required>
-        </div>
+        <div class="form-group"><label class="form-label">Código</label><input type="text" id="op-codigo" class="form-input" value="${op?.codigo || ''}" required></div>
         <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Tipo</label>
+          <div class="form-group"><label class="form-label">Tipo</label>
             <select id="op-tipo" class="form-select">
-              <option value="vuelo" ${op?.tipo === 'vuelo' ? 'selected' : ''}>Vuelo</option>
-              <option value="tren" ${op?.tipo === 'tren' ? 'selected' : ''}>Tren</option>
+              <option value="vuelo" ${op?.tipo.toLowerCase() === 'vuelo' ? 'selected' : ''}>Vuelo</option>
+              <option value="tren" ${op?.tipo.toLowerCase() === 'tren' ? 'selected' : ''}>Tren</option>
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Sentido</label>
+          <div class="form-group"><label class="form-label">Sentido</label>
             <select id="op-sentido" class="form-select">
-              <option value="salida" ${op?.sentido === 'salida' ? 'selected' : ''}>Salida</option>
-              <option value="llegada" ${op?.sentido === 'llegada' ? 'selected' : ''}>Llegada</option>
+              <option value="salida" ${op?.sentido.toLowerCase() === 'salida' ? 'selected' : ''}>Salida</option>
+              <option value="llegada" ${op?.sentido.toLowerCase() === 'llegada' ? 'selected' : ''}>Llegada</option>
             </select>
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Origen</label>
-            <input type="text" id="op-origen" class="form-input" value="${op?.origen || ''}" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Destino</label>
-            <input type="text" id="op-destino" class="form-input" value="${op?.destino || ''}" required>
-          </div>
+          <div class="form-group"><label class="form-label">Origen</label><input type="text" id="op-origen" class="form-input" value="${op?.origen || ''}" required></div>
+          <div class="form-group"><label class="form-label">Destino</label><input type="text" id="op-destino" class="form-input" value="${op?.destino || ''}" required></div>
         </div>
         <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">H. Programada</label>
-            <input type="datetime-local" id="op-hprog" class="form-input" value="${op?.horaProgramada ? op.horaProgramada.slice(0, 16) : ''}" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">H. Estimada</label>
-            <input type="datetime-local" id="op-hest" class="form-input" value="${op?.horaEstimada ? op.horaEstimada.slice(0, 16) : ''}" required>
-          </div>
+          <div class="form-group"><label class="form-label">H. Programada</label><input type="datetime-local" id="op-hprog" class="form-input" value="${op?.horaProgramada ? op.horaProgramada.slice(0, 16) : ''}" required></div>
+          <div class="form-group"><label class="form-label">H. Estimada</label><input type="datetime-local" id="op-hest" class="form-input" value="${op?.horaEstimada ? op.horaEstimada.slice(0, 16) : ''}" required></div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Estado</label>
+        <div class="form-group"><label class="form-label">Estado</label>
           <select id="op-estado" class="form-select">
             ${['PROGRAMADO', 'EMBARCANDO', 'RETRASADO', 'CANCELADO', 'EN_RUTA', 'LLEGADO'].map(e => `
               <option value="${e}" ${op?.estado === e ? 'selected' : ''}>${e}</option>
@@ -146,29 +131,30 @@ class AdminView {
           </select>
         </div>
         <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Operador</label>
+          <div class="form-group"><label class="form-label">Operador</label>
             <select id="op-operador" class="form-select">
-              ${ops.map(o => `<option value="${o.operadorId}" ${op?.operadorId == o.operadorId ? 'selected' : ''}>${o.nombre}</option>`).join('')}
+              ${ops.map(o => {
+                let opId = op ? (typeof op.operador === 'object' ? op.operador.id : op.operadorId) : null;
+                return `<option value="${o.id || o.operadorId}" ${opId == (o.id || o.operadorId) ? 'selected' : ''}>${o.nombre}</option>`;
+              }).join('')}
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Punto Acceso</label>
+          <div class="form-group"><label class="form-label">Punto Acceso</label>
             <select id="op-punto" class="form-select">
-              ${pts.map(p => `<option value="${p.puntoId}" ${op?.puntoId == p.puntoId ? 'selected' : ''}>${p.codigo}</option>`).join('')}
+              ${pts.map(p => {
+                let ptId = op ? (typeof op.punto === 'object' ? op.punto.puntoId : op.puntoId) : null;
+                return `<option value="${p.puntoId}" ${ptId == p.puntoId ? 'selected' : ''}>${p.codigo}</option>`;
+              }).join('')}
             </select>
           </div>
         </div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-secondary" onclick="Modal.close()">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Guardar</button>
-        </div>
+        <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="Modal.close()">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
       </form>
     `;
 
-    Modal.open(html, id ? 'Editar Operación' : 'Nueva Operación');
+    window.Modal.open(html, id ? 'Editar Operación' : 'Nueva Operación');
 
-    document.getElementById('form-op').onsubmit = (e) => {
+    document.getElementById('form-op').onsubmit = async (e) => {
       e.preventDefault();
       const payload = {
         operacionId: id,
@@ -183,14 +169,19 @@ class AdminView {
         operadorId: parseInt(document.getElementById('op-operador').value),
         puntoId: parseInt(document.getElementById('op-punto').value)
       };
-      OperacionService.getInstance().save(payload);
-      Modal.close();
-      Toast.show('Operación actualizada', 'success');
+      
+      try {
+        await OperacionService.getInstance().save(payload);
+        window.Modal.close();
+        if(window.Toast) window.Toast.show('Guardado exitosamente', 'success');
+      } catch (err) {
+        if(window.Toast) window.Toast.show('Error al guardar', 'error');
+      }
     };
   }
 
-  _renderOperadores(container) {
-    const data = OperadorService.getInstance().getAll();
+  async _renderOperadores(container) {
+    const data = await OperadorService.getInstance().getAll();
     container.innerHTML = `
       <div class="page-header">
         <h2 class="page-title">Gestión de Operadores</h2>
@@ -205,7 +196,8 @@ class AdminView {
               <td><strong>${o.siglas}</strong></td>
               <td><div style="width:20px;height:20px;border-radius:50%;background:${o.color}"></div></td>
               <td class="table-actions">
-                <button class="btn btn-secondary btn-sm js-edit-opr" data-id="${o.operadorId}">Editar</button>
+                <button class="btn btn-secondary btn-sm js-edit-opr" data-id="${o.id || o.operadorId}">Editar</button>
+                <button class="btn btn-danger btn-sm js-delete-opr" data-id="${o.id || o.operadorId}">Eliminar</button>
               </td>
             </tr>
           `).join('')}
@@ -214,11 +206,20 @@ class AdminView {
     `;
     container.querySelector('#btn-new-opr').onclick = () => this._formOperador();
     container.querySelectorAll('.js-edit-opr').forEach(btn => btn.onclick = () => this._formOperador(btn.dataset.id));
+    container.querySelectorAll('.js-delete-opr').forEach(btn => btn.onclick = async () => {
+      if (confirm('¿Eliminar operador?')) {
+        await OperadorService.getInstance().delete(btn.dataset.id);
+      }
+    });
   }
 
-  _formOperador(id = null) {
-    const service = OperadorService.getInstance();
-    const obj = id ? service.getAll().find(o => o.operadorId == id) : null;
+  async _formOperador(id = null) {
+    let obj = null;
+    if (id) {
+      const ops = await OperadorService.getInstance().getAll();
+      obj = ops.find(o => o.id == id || o.operadorId == id);
+    }
+
     const html = `
       <form id="form-opr">
         <div class="form-group"><label class="form-label">Nombre</label><input type="text" id="opr-nombre" class="form-input" value="${obj?.nombre || ''}" required></div>
@@ -226,29 +227,26 @@ class AdminView {
           <div class="form-group"><label class="form-label">Siglas</label><input type="text" id="opr-siglas" class="form-input" value="${obj?.siglas || ''}" required></div>
           <div class="form-group"><label class="form-label">Color</label><input type="color" id="opr-color" class="form-input" value="${obj?.color || '#f59e0b'}"></div>
         </div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-secondary" onclick="Modal.close()">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Guardar</button>
-        </div>
+        <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="Modal.close()">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
       </form>
     `;
-    Modal.open(html, 'Datos del Operador');
-    document.getElementById('form-opr').onsubmit = (e) => {
+    window.Modal.open(html, 'Datos del Operador');
+    document.getElementById('form-opr').onsubmit = async (e) => {
       e.preventDefault();
-      service.save({
+      await OperadorService.getInstance().save({
         operadorId: id ? parseInt(id) : null,
         nombre: document.getElementById('opr-nombre').value,
         siglas: document.getElementById('opr-siglas').value,
         color: document.getElementById('opr-color').value,
         urlIcono: ''
       });
-      Modal.close();
-      Toast.show('Operador guardado', 'success');
+      window.Modal.close();
+      if(window.Toast) window.Toast.show('Operador guardado', 'success');
     };
   }
 
-  _renderPuntos(container) {
-    const data = PuntoService.getInstance().getAll();
+  async _renderPuntos(container) {
+    const data = await PuntoService.getInstance().getAll();
     container.innerHTML = `
       <div class="page-header">
         <h2 class="page-title">Gestión de Puntos</h2>
@@ -263,6 +261,7 @@ class AdminView {
               <td>${p.codigo}</td>
               <td class="table-actions">
                 <button class="btn btn-secondary btn-sm js-edit-p" data-id="${p.puntoId}">Editar</button>
+                <button class="btn btn-danger btn-sm js-delete-p" data-id="${p.puntoId}">Eliminar</button>
               </td>
             </tr>
           `).join('')}
@@ -271,11 +270,17 @@ class AdminView {
     `;
     container.querySelector('#btn-new-p').onclick = () => this._formPunto();
     container.querySelectorAll('.js-edit-p').forEach(btn => btn.onclick = () => this._formPunto(btn.dataset.id));
+    container.querySelectorAll('.js-delete-p').forEach(btn => btn.onclick = async () => {
+      if (confirm('¿Eliminar punto?')) await PuntoService.getInstance().delete(btn.dataset.id);
+    });
   }
 
-  _formPunto(id = null) {
-    const service = PuntoService.getInstance();
-    const obj = id ? service.getAll().find(p => p.puntoId == id) : null;
+  async _formPunto(id = null) {
+    let obj = null;
+    if (id) {
+      const pts = await PuntoService.getInstance().getAll();
+      obj = pts.find(p => p.puntoId == id);
+    }
     const html = `
       <form id="form-p">
         <div class="form-group">
@@ -286,22 +291,19 @@ class AdminView {
           </select>
         </div>
         <div class="form-group"><label class="form-label">Código</label><input type="text" id="p-codigo" class="form-input" value="${obj?.codigo || ''}" required></div>
-        <div class="form-actions">
-          <button type="button" class="btn btn-secondary" onclick="Modal.close()">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Guardar</button>
-        </div>
+        <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="Modal.close()">Cancelar</button><button type="submit" class="btn btn-primary">Guardar</button></div>
       </form>
     `;
-    Modal.open(html, 'Datos del Punto de Acceso');
-    document.getElementById('form-p').onsubmit = (e) => {
+    window.Modal.open(html, 'Datos del Punto de Acceso');
+    document.getElementById('form-p').onsubmit = async (e) => {
       e.preventDefault();
-      service.save({
+      await PuntoService.getInstance().save({
         puntoId: id ? parseInt(id) : null,
         tipo: document.getElementById('p-tipo').value,
         codigo: document.getElementById('p-codigo').value
       });
-      Modal.close();
-      Toast.show('Punto guardado', 'success');
+      window.Modal.close();
+      if(window.Toast) window.Toast.show('Punto guardado', 'success');
     };
   }
 }

@@ -22,7 +22,6 @@ class CreateCommand
 {
     use TraitController;
 
-    // constructor receives container instance
     public function __construct(
         private readonly ORM\EntityManager $entityManager
     ) { }
@@ -30,51 +29,59 @@ class CreateCommand
     /**
      * POST /api/v1/users
      *
-     * Summary: Creates a new user (with PUBLICO role)
-     *
-     * @param Request $request
-     * @param Response $response
-     *
-     * @return Response
      * @throws ORM\Exception\ORMException
      */
     public function __invoke(Request $request, Response $response): Response
     {
         assert($request->getMethod() === 'POST');
-        /** @var array<string, string> $req_data */
+        /** @var array<string, mixed> $req_data */
         $req_data = $request->getParsedBody() ?? [];
 
-        if (!isset($req_data['email'], $req_data['password'])
-          || !$this->verifyStringInput($req_data['email'], 60)
-        ) { // 422 - Faltan datos
+        if (
+            !isset($req_data['email'], $req_data['password']) ||
+            !is_string($req_data['email']) ||
+            !is_string($req_data['password']) ||
+            !$this->verifyStringInput($req_data['email'], 60)
+        ) { // 422
             return Error::createResponse($response, StatusCode::STATUS_UNPROCESSABLE_ENTITY);
         }
 
-        // hay datos -> procesarlos
         $userRepository = $this->entityManager->getRepository(User::class);
-        // STATUS_BAD_REQUEST 400: e-mail already exists
         if (0 !== $this->findByAttribute($userRepository, 'email', $req_data['email'])) {
             return Error::createResponse($response, StatusCode::STATUS_BAD_REQUEST);
         }
 
-        // 201
         try {
             assert(strlen($req_data['email']) > 0);
             $user = new User(
                 email: $req_data['email'],
                 password: $req_data['password']
             );
-        } catch (Throwable) {    // 400 BAD REQUEST: Unexpected EMAIL
+
+            // Populate expanded demographics safely
+            if (isset($req_data['nombre']) && is_string($req_data['nombre'])) {
+                $user->setNombre(substr($req_data['nombre'], 0, 120));
+            }
+            if (isset($req_data['apellidos']) && is_string($req_data['apellidos'])) {
+                $user->setApellidos(substr($req_data['apellidos'], 0, 120));
+            }
+            if (isset($req_data['fechaNacimiento']) && is_string($req_data['fechaNacimiento'])) {
+                $user->setFechaNacimiento(new \DateTime($req_data['fechaNacimiento']));
+            }
+            if (isset($req_data['urlsInteres']) && is_array($req_data['urlsInteres'])) {
+                $urls = array_filter($req_data['urlsInteres'], 'is_string');
+                $user->setUrlsInteres(array_values($urls));
+            }
+
+        } catch (Throwable) {    // 400 BAD REQUEST: Unexpected format
             return Error::createResponse($response, StatusCode::STATUS_BAD_REQUEST);
         }
+
         $this->entityManager->persist($user);
         $this->entityManager->flush();
 
         return $response
-            ->withAddedHeader(
-                'Location',
-                $request->getUri() . '/' . $user->getId()
-            )
+            ->withAddedHeader('Location', $request->getUri() . '/' . $user->getId())
             ->withJson($user, StatusCode::STATUS_CREATED);
     }
 }

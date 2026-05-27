@@ -1,4 +1,5 @@
 class OperadorService {
+  static _instance = null;
   constructor() {
     if (OperadorService._instance) return OperadorService._instance;
     OperadorService._instance = this;

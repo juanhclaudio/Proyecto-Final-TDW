@@ -11,9 +11,10 @@ namespace TDW\IPanel\Utility;
 
 use Doctrine\ORM\{EntityManager, Tools\SchemaTool};
 use Dotenv\Dotenv;
-use TDW\IPanel\Enum\Role;
-use TDW\IPanel\Model\{User};
+use TDW\IPanel\Enum\{Role, TipoOperacion, SentidoOperacion, EstadoOperacion, TipoPunto};
+use TDW\IPanel\Model\{User, Operador, Punto, Operacion};
 use Throwable;
+use DateTime;
 
 /**
  * Class Utils
@@ -22,9 +23,6 @@ class Utils
 {
     /**
      * Load the environment/configuration variables
-     * defined in .env file + (.env.docker || .env.local)
-     *
-     * @param string $dir   project root directory
      */
     public static function loadEnv(string $dir): void
     {
@@ -36,7 +34,6 @@ class Utils
         }
 
         try {
-            // Load environment variables from .env file
             if (file_exists($dir . '/.env')) {
                 $dotenv = Dotenv::createMutable($dir, '.env');
                 $dotenv->load();
@@ -45,7 +42,6 @@ class Utils
                 exit(1);
             }
 
-            // Overload (if they exist) with .env.docker or .env.local
             if (isset($_SERVER['DOCKER']) && file_exists($dir . '/.env.docker')) {
                 $dotenv = Dotenv::createMutable($dir, '.env.docker');
                 $dotenv->load();
@@ -54,22 +50,16 @@ class Utils
                 $dotenv->load();
             }
 
-            // Requiring Variables to be set
             $dotenv->required([ 'DATABASE_NAME', 'DATABASE_USER', 'DATABASE_PASSWD', 'SERVER_VERSION' ]);
             $dotenv->required([ 'ENTITY_DIR' ]);
         } catch (Throwable $e) {
-            fwrite(
-                STDERR,
-                'EXCEPCIÓN: ' . $e->getCode() . ' - ' . $e->getMessage()
-            );
+            fwrite(STDERR, 'EXCEPCIÓN: ' . $e->getCode() . ' - ' . $e->getMessage());
             exit(1);
         }
     }
 
     /**
      * Drop & Update database schema
-     *
-     * @return void
      */
     public static function updateSchema(): void
     {
@@ -82,10 +72,7 @@ class Utils
             $sch_tool->dropDatabase();
             $sch_tool->updateSchema($metadata);
         } catch (Throwable $e) {
-            fwrite(
-                STDERR,
-                'EXCEPCIÓN: ' . $e->getCode() . ' - ' . $e->getMessage()
-            );
+            fwrite(STDERR, 'EXCEPCIÓN: ' . $e->getCode() . ' - ' . $e->getMessage());
             exit(1);
         }
     }
@@ -96,13 +83,23 @@ class Utils
      * @param string $email user email
      * @param string $password user password
      * @param bool $gestor isAdmin
+     * @param bool $activo user active status
+     * @param string|null $nombre user name
+     * @param string|null $apellidos user surname
+     * @param string|null $fechaNacimiento user birthdate (format: 'Y-m-d')
+     * @param string[] $urlsInteres array of interesting urls
      *
      * @return int user_id
      */
     public static function loadUserData(
         string $email,
         string $password,
-        bool $gestor = false
+        bool $gestor = false,
+        bool $activo = true,
+        ?string $nombre = null,
+        ?string $apellidos = null,
+        ?string $fechaNacimiento = null,
+        array $urlsInteres = []
     ): int {
         assert($email !== '');
         $user = new User(
@@ -110,6 +107,17 @@ class Utils
             password: $password,
             role: $gestor ? Role::GESTOR : Role::PUBLICO
         );
+        
+        $user->setActivo($activo);
+        $user->setNombre($nombre);
+        $user->setApellidos($apellidos);
+        
+        if ($fechaNacimiento !== null) {
+            $user->setFechaNacimiento(new \DateTime($fechaNacimiento));
+        }
+        
+        $user->setUrlsInteres($urlsInteres);
+
         try {
             $e_manager = DoctrineConnector::getEntityManager();
             $e_manager->persist($user);
@@ -117,7 +125,7 @@ class Utils
         } catch (Throwable $e) {
             fwrite(
                 STDERR,
-                'EXCEPCIÓN: ' . $e->getCode() . ' - ' . $e->getMessage()
+                'EXCEPCIÓN User: ' . $e->getCode() . ' - ' . $e->getMessage() . PHP_EOL
             );
             exit(1);
         }
@@ -125,26 +133,20 @@ class Utils
         return $user->getId();
     }
     
-    public static function loadOperatorData(
-        string $nombre,
-        string $siglas,
-        ?string $color = null,
-        ?string $urlIcono = null
-    ): int {
+    public static function loadOperatorData(string $nombre, string $siglas, ?string $color = null, ?string $urlIcono = null): int 
+    {
         $entityManager = DoctrineConnector::getEntityManager();
-        $operator = new \TDW\IPanel\Model\Operador($nombre, $siglas, $color, $urlIcono);
+        $operator = new Operador($nombre, $siglas, $color, $urlIcono);
         $entityManager->persist($operator);
         $entityManager->flush();
         return $operator->getId();
     }
 
-    public static function loadSpotData(
-        string $tipo,
-        string $codigo
-    ): int {
+    public static function loadSpotData(string $tipo, string $codigo): int 
+    {
         $entityManager = DoctrineConnector::getEntityManager();
-        $tipoPunto = \TDW\IPanel\Enum\TipoPunto::from(strtoupper($tipo));
-        $spot = new \TDW\IPanel\Model\Punto($tipoPunto, $codigo);
+        $tipoPunto = TipoPunto::from(strtoupper($tipo));
+        $spot = new Punto($tipoPunto, $codigo);
         $entityManager->persist($spot);
         $entityManager->flush();
         return $spot->getId();
@@ -153,25 +155,28 @@ class Utils
     public static function loadOperationData(array $data): string
     {
         $entityManager = DoctrineConnector::getEntityManager();
-        $operador = $entityManager->getRepository(\TDW\IPanel\Model\Operador::class)->find($data['operadorId']);
-        $punto = $entityManager->getRepository(\TDW\IPanel\Model\Punto::class)->find($data['puntoId']);
+        $operador = $entityManager->getRepository(Operador::class)->find($data['operadorId']);
+        $punto = $entityManager->getRepository(Punto::class)->find($data['puntoId']);
         
-        $operacion = new \TDW\IPanel\Model\Operacion(
-            \TDW\IPanel\Enum\TipoOperacion::from($data['tipo']),
+        if (!$operador || !$punto) {
+            throw new \Exception("Operador o Punto no encontrados para la operación " . $data['codigo']);
+        }
+
+        $operacion = new Operacion(
+            TipoOperacion::from(strtolower($data['tipo'])),
             $data['codigo'],
-            \TDW\IPanel\Enum\SentidoOperacion::from($data['sentido']),
+            SentidoOperacion::from(strtolower($data['sentido'])),
             $data['origen'],
             $data['destino'],
             $operador,
             $punto,
-            \TDW\IPanel\Enum\EstadoOperacion::from($data['estado'] ?? 'programado'),
-            isset($data['horaProgramada']) ? new \DateTime($data['horaProgramada']) : null,
-            isset($data['horaEstimada']) ? new \DateTime($data['horaEstimada']) : null
+            EstadoOperacion::from(strtolower($data['estado'] ?? 'programado')),
+            isset($data['horaProgramada']) ? new DateTime($data['horaProgramada']) : null,
+            isset($data['horaEstimada']) ? new DateTime($data['horaEstimada']) : null
         );
         
         $entityManager->persist($operacion);
         $entityManager->flush();
         return $operacion->getId();
     }
-
 }

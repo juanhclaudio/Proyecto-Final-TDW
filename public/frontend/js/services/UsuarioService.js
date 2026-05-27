@@ -1,12 +1,12 @@
 class UsuarioService {
+
+  static _instance = null;
+
   constructor() {
     if (UsuarioService._instance) return UsuarioService._instance;
     UsuarioService._instance = this;
-
-    this._storage = StorageService.getInstance();
-    this._eventBus = EventBus.getInstance();
-    this._key = 'infopanel_usuarios';
-    this._sessionKey = 'infopanel_sesion_activa';
+    
+    this._eventBus = window.EventBus ? window.EventBus.getInstance() : null;
   }
 
   static getInstance() {
@@ -14,66 +14,70 @@ class UsuarioService {
     return UsuarioService._instance;
   }
 
-  getUsuarios() {
-    const rawData = this._storage.get(this._key) || [];
-    return DataFactory.createCollection('usuario', rawData);
+  async getUsuarios() {
+    try {
+      const response = await ApiService.getInstance().fetchWithAuth('/users');
+      return response.users || response || []; 
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      throw error;
+    }
   }
 
-  registrar(email, password) {
-    const usuarios = this.getUsuarios();
-    if (usuarios.find(u => u.email === email)) {
-      throw new Error("El usuario ya existe.");
-    }
-
-    const nuevoUsuario = DataFactory.create('usuario', { email, password, rol: 'PÚBLICO' });
-    usuarios.push(nuevoUsuario);
-    this._storage.set(this._key, usuarios);
+  async registrar(userData) {
+    const nuevoUsuario = await ApiService.getInstance().fetchWithAuth('/users', {
+      method: 'POST',
+      body: JSON.stringify(userData)
+    });
     return nuevoUsuario;
   }
 
-  login(email, password) {
-    const usuarios = this.getUsuarios();
-    const user = usuarios.find(u => u.email === email && u.password === password);
-    
-    if (!user) throw new Error("Credenciales incorrectas.");
+  async login(username, password) {
+    const response = await ApiService.getInstance().fetchWithAuth('/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
 
-    this._storage.set(this._sessionKey, user);
-    this._eventBus.emit('session:changed', user);
+    if (!response.ok) {
+      throw new Error("Credenciales incorrectas o cuenta inactiva.");
+    }
+
+    const data = await response.json();
+    StorageService.getInstance().setToken(data.access_token);
+    
+    const user = StorageService.getInstance().getCurrentUser();
+    if (this._eventBus) this._eventBus.emit('session:changed', user);
+    
     return user;
   }
 
   logout() {
-    this._storage.remove(this._sessionKey);
-    this._eventBus.emit('session:changed', null);
+    StorageService.getInstance().removeToken();
+    if (this._eventBus) this._eventBus.emit('session:changed', null);
   }
 
   getUsuarioActual() {
-    const data = this._storage.get(this._sessionKey);
-    return data ? DataFactory.create('usuario', data) : null;
+    return StorageService.getInstance().getCurrentUser();
   }
 
-  updateRol(email, nuevoRol) {
-    const usuarios = this.getUsuarios();
-    const index = usuarios.findIndex(u => u.email === email);
-    if (index === -1) return;
+  async updateUsuario(id, updateData, etag = null) {
+    const headers = {};
+    if (etag) headers['If-Match'] = etag;
 
-    if (nuevoRol === 'PÚBLICO') {
-      const gestores = usuarios.filter(u => u.rol === 'GESTOR');
-      if (gestores.length <= 1 && usuarios[index].rol === 'GESTOR') {
-        throw new Error("No se puede dejar la aplicación sin gestores.");
-      }
-    }
-
-    usuarios[index].rol = nuevoRol;
-    this._storage.set(this._key, usuarios);
+    const result = await ApiService.getInstance().fetchWithAuth(`/users/${id}`, {
+      method: 'PUT',
+      headers: headers,
+      body: JSON.stringify(updateData)
+    });
+    
+    if (this._eventBus) this._eventBus.emit('usuarios:changed');
     
     const actual = this.getUsuarioActual();
-    if (actual && actual.email === email) {
-      actual.rol = nuevoRol;
-      this._storage.set(this._sessionKey, actual);
-      this._eventBus.emit('session:changed', actual);
+    if (actual && actual.uid === id && this._eventBus) {
+       this._eventBus.emit('session:changed', actual);
     }
-
-    this._eventBus.emit('usuarios:changed', usuarios);
+    
+    return result;
   }
 }

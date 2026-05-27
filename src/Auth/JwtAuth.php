@@ -39,8 +39,7 @@ final readonly class JwtAuth
         private string            $issuer,
         private string            $clientId,
         private int               $lifetime
-    ) {
-    }
+    ) {}
 
     /**
      * Get JWT max lifetime.
@@ -63,35 +62,19 @@ final readonly class JwtAuth
      */
     public function createJwt(User $user, array $requestedScopes = Role::ALL_VALUES): JWT\Token\Plain
     {
+        $userRoles = array_map(fn($r) => $r->value, $user->getRoles());
+
         $awardedScopes = array_filter(
-            array_unique(array_merge($requestedScopes, [ Role::PUBLICO->value ])),
+            array_unique(array_merge($requestedScopes, $userRoles)),
             fn($role) => $user->hasRole($role),
         );
 
-        $now = new DateTimeImmutable();
-        assert(strlen($this->issuer) > 0);
-        assert(strlen($this->clientId) > 0);
-        assert(Uuid::v7()->toString() !== '');
-        assert($user->getEmail() !== '');
-
         $token = $this->config->builder()
-            ->issuedBy($this->issuer)   // iss: Issuer (who created and signed this token)
-            ->issuedAt($now)    // iat: The time at which the JWT was issued
-            ->relatedTo($user->getEmail()) // sub: Subject (whom de token refers to)
-            ->identifiedBy(Uuid::v7()->toString())   // jti: JWT id (unique identifier for this token)
-            ->canOnlyBeUsedAfter($now)  // nbf: Not valid before
-            ->expiresAt($now->modify('+' . $this->getLifetime() . ' seconds'))
-            ->permittedFor($this->clientId) // Audience (who or what the token is intended for)
-            ->withClaim('uid', $user->getId())
-            ->withClaim('email', $user->getEmail())
             ->withClaim('scopes', array_values($awardedScopes))
+            ->withClaim('role', $user->getRoles()[0]->value)
             ->getToken($this->config->signer(), $this->config->signingKey());
 
-        return new JWT\Token\Plain(
-            headers:   $token->headers(),
-            claims:    $token->claims(),
-            signature: $token->signature()
-        );
+        return $token;
     }
 
     /**

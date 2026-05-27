@@ -8,9 +8,14 @@
  */
 
 use Slim\App;
-use TDW\IPanel\Controller\Login\{ LoginController, OptionsQuery };
+use TDW\IPanel\Controller\Login\{LoginController, OptionsQuery};
 
 return function (App $app) {
+
+    (require __DIR__ . '/routesUsers.php')($app);
+    (require __DIR__ . '/routesOperations.php')($app);
+    (require __DIR__ . '/routesOperators.php')($app);
+    (require __DIR__ . '/routesSpots.php')($app);
 
     // Redirection / -> /api-docs/index.html
     $app->redirect(

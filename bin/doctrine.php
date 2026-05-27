@@ -23,6 +23,8 @@ $commands = [
     // you can do so here.
 ];
 
+var_dump($_ENV['DATABASE_NAME']);
+
 ConsoleRunner::run(
     new SingleManagerProvider($entityManager),
     $commands

@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace TDW\IPanel\Model;
 
+use DateTime;
 use Doctrine\ORM\Mapping as ORM;
 use InvalidArgumentException;
 use JetBrains\PhpStorm\ArrayShape;
@@ -55,9 +56,48 @@ class User implements JsonSerializable, Stringable
         length: 10,
         nullable: false,
         enumType: Role::class,
-        options: [ 'default' => Role::PUBLICO ]
+        options: ['default' => Role::PUBLICO]
     )]
     protected Role $role;
+
+    #[ORM\Column(
+        name: 'activo',
+        type: 'boolean',
+        nullable: false,
+        options: ['default' => true]
+    )]
+    protected bool $activo = true;
+
+    #[ORM\Column(
+        name: 'nombre',
+        type: 'string',
+        length: 120,
+        nullable: true
+    )]
+    protected ?string $nombre;
+
+    #[ORM\Column(
+        name: 'apellidos',
+        type: 'string',
+        length: 120,
+        nullable: true
+    )]
+    protected ?string $apellidos;
+
+    #[ORM\Column(
+        name: 'fecha_nacimiento',
+        type: 'datetime',
+        nullable: true
+    )]
+    protected ?DateTime $fechaNacimiento;
+
+    /** @var array<string>|null */
+    #[ORM\Column(
+        name: 'urls_interes',
+        type: 'json',
+        nullable: true
+    )]
+    protected ?array $urlsInteres;
 
     /**
      * User constructor.
@@ -74,16 +114,21 @@ class User implements JsonSerializable, Stringable
         Role|string $role = Role::PUBLICO
     ) {
         assert($email !== '', InvalidArgumentException::class);
-        $this->id       = 0;
-        $this->email    = $email;
+        $this->id              = 0;
+        $this->email           = $email;
         $this->setPassword($password);
         $this->setRole($role);
+        
+        // Expanded demographic initializations
+        $this->activo          = true;
+        $this->nombre          = null;
+        $this->apellidos       = null;
+        $this->fechaNacimiento = null;
+        $this->urlsInteres     = [];
     }
 
     /**
      * Gets the user ID
-     *
-     * @return int User id
      */
     public function getId(): int
     {
@@ -92,8 +137,6 @@ class User implements JsonSerializable, Stringable
 
     /**
      * Get user e-mail
-     *
-     * @return string User email
      */
     public function getEmail(): string
     {
@@ -103,8 +146,6 @@ class User implements JsonSerializable, Stringable
     /**
      * Set user e-mail
      *
-     * @param string $email email
-     * @return void
      * @throws InvalidArgumentException if the email is empty
      */
     public function setEmail(string $email): void
@@ -115,8 +156,6 @@ class User implements JsonSerializable, Stringable
 
     /**
      * Get the hashed password
-     *
-     * @return string hashed password
      */
     public function getPassword(): string
     {
@@ -125,9 +164,6 @@ class User implements JsonSerializable, Stringable
 
     /**
      * Set the user's password
-     *
-     * @param string $password password
-     * @return void
      */
     public function setPassword(string $password): void
     {
@@ -136,9 +172,6 @@ class User implements JsonSerializable, Stringable
 
     /**
      * Verifies that the given hash matches the user password.
-     *
-     * @param string $password user password
-     * @return boolean Returns TRUE if the password and hash match, or FALSE otherwise.
      */
     public function validatePassword(string $password): bool
     {
@@ -147,9 +180,6 @@ class User implements JsonSerializable, Stringable
 
     /**
      * Determines whether the user has a certain role
-     *
-     * @param Role|string $role [ Role::PUBLICO | Role::GESTOR | Role::INACTIVO | 'publico' | 'gestor' | 'inactivo' ]
-     * @return bool Returns TRUE if the user has the role, or FALSE otherwise.
      */
     public function hasRole(Role|string $role): bool
     {
@@ -158,17 +188,15 @@ class User implements JsonSerializable, Stringable
         }
         return match ($role) {
             Role::INACTIVO => $this->role->is(Role::INACTIVO),
-            Role::PUBLICO => !$this->role->is(Role::INACTIVO),
-            Role::GESTOR => $this->role->is(Role::GESTOR),
-            default => false
+            Role::PUBLICO  => !$this->role->is(Role::INACTIVO),
+            Role::GESTOR   => $this->role->is(Role::GESTOR),
+            default        => false
         };
     }
 
     /**
      * Assign the role to the user
      *
-     * @param Role|string $newRole [ Role::PUBLICO | Role::GESTOR | Role::INACTIVO | 'publico' | 'gestor' | 'inactivo' ]
-     * @return void
      * @throws InvalidArgumentException if the role is invalid
      */
     public function setRole(Role|string $newRole): void
@@ -185,29 +213,92 @@ class User implements JsonSerializable, Stringable
     /**
      * Returns an array with the user's roles
      *
-     * @return Role[] [ INACTIVE] | [ READER ] | [ READER , WRITER ]
+     * @return Role[]
      */
     public function getRoles(): array
     {
-        $roles = array_filter(
+        return array_filter(
             Role::cases(),
             fn($myRole) => $this->hasRole($myRole)
         );
-        return $roles;
+    }
+
+    /**
+     * Get user active status (Soft-Lock flag)
+     */
+    public function isActivo(): bool
+    {
+        return $this->activo;
+    }
+
+    /**
+     * Set user active status
+     */
+    public function setActivo(bool $activo): void
+    {
+        $this->activo = $activo;
+    }
+
+    public function getNombre(): ?string
+    {
+        return $this->nombre;
+    }
+
+    public function setNombre(?string $nombre): void
+    {
+        $this->nombre = $nombre;
+    }
+
+    public function getApellidos(): ?string
+    {
+        return $this->apellidos;
+    }
+
+    public function setApellidos(?string $apellidos): void
+    {
+        $this->apellidos = $apellidos;
+    }
+
+    public function getFechaNacimiento(): ?DateTime
+    {
+        return $this->fechaNacimiento;
+    }
+
+    public function setFechaNacimiento(?DateTime $fechaNacimiento): void
+    {
+        $this->fechaNacimiento = $fechaNacimiento;
+    }
+
+    /**
+     * @return string[]
+     */
+    public function getUrlsInteres(): array
+    {
+        return $this->urlsInteres ?? [];
+    }
+
+    /**
+     * @param string[] $urlsInteres
+     */
+    public function setUrlsInteres(?array $urlsInteres): void
+    {
+        $this->urlsInteres = $urlsInteres;
     }
 
     /** @see Stringable */
     public function __toString(): string
     {
         $reflection = new ReflectionObject($this);
-        return
-            sprintf(
-                '[%s: (id=%04d, email="%s", role="%s")]',
-                $reflection->getShortName(),
-                $this->getId(),
-                $this->getEmail(),
-                $this->role->name,
-            );
+        return sprintf(
+            '[%s: (id=%04d, email="%s", role="%s", activo="%s", nombre="%s", apellidos="%s")]',
+            $reflection->getShortName(),
+            $this->getId(),
+            $this->getEmail(),
+            $this->role->name,
+            $this->isActivo() ? 'true' : 'false',
+            $this->getNombre() ?? 'null',
+            $this->getApellidos() ?? 'null'
+        );
     }
 
     /**
@@ -219,9 +310,14 @@ class User implements JsonSerializable, Stringable
         $reflection = new ReflectionObject($this);
         return [
             strtolower($reflection->getShortName()) => [
-                'id' => $this->getId(),
-                'email' => $this->getEmail(),
-                'role' => $this->role->name,
+                'id'              => $this->getId(),
+                'email'           => $this->getEmail(),
+                'role'            => $this->role->name,
+                'activo'          => $this->isActivo(),
+                'nombre'          => $this->getNombre(),
+                'apellidos'       => $this->getApellidos(),
+                'fechaNacimiento' => $this->getFechaNacimiento()?->format('Y-m-d'),
+                'urlsInteres'     => $this->getUrlsInteres(),
             ]
         ];
     }

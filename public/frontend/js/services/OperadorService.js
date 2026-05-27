@@ -1,28 +1,49 @@
 class OperadorService {
+  static _instance = null;
   constructor() {
     if (OperadorService._instance) return OperadorService._instance;
     OperadorService._instance = this;
-    this._storage = StorageService.getInstance();
-    this._key = 'infopanel_operadores';
+    this._eventBus = window.EventBus ? window.EventBus.getInstance() : null;
   }
+
   static getInstance() {
     if (!OperadorService._instance) new OperadorService();
     return OperadorService._instance;
   }
-  getAll() {
-    const data = this._storage.get(this._key) || [];
-    return DataFactory.createCollection('operador', data);
-  }
-  save(item) {
-    const items = this.getAll();
-    if (!item.operadorId) {
-      item.operadorId = items.length > 0 ? Math.max(...items.map(i => i.operadorId)) + 1 : 1;
-      items.push(item);
-    } else {
-      const idx = items.findIndex(i => i.operadorId === item.operadorId);
-      if (idx !== -1) items[idx] = item;
+
+  async getAll() {
+    try {
+      const response = await ApiService.getInstance().fetchWithAuth('/operators');
+      const data = Array.isArray(response) ? response : (response.operadores || response.operators || []);
+      return window.DataFactory ? window.DataFactory.createCollection('operador', data) : data;
+    } catch (error) {
+      console.error("Error al obtener operadores de la API:", error);
+      return [];
     }
-    this._storage.set(this._key, items);
-    EventBus.getInstance().emit('operadores:changed', items);
+  }
+
+  async save(data, etag = null) {
+    let result;
+    if (!data.operadorId) {
+      result = await ApiService.getInstance().fetchWithAuth('/operators', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+    } else {
+      const headers = {};
+      if (etag) headers['If-Match'] = etag;
+      result = await ApiService.getInstance().fetchWithAuth(`/operators/${data.operadorId}`, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify(data)
+      });
+    }
+    if (this._eventBus) this._eventBus.emit('operadores:changed', await this.getAll());
+    return result;
+  }
+  
+  async delete(id) {
+    await ApiService.getInstance().fetchWithAuth(`/operators/${id}`, { method: 'DELETE' });
+    if (this._eventBus) this._eventBus.emit('operadores:changed', await this.getAll());
   }
 }

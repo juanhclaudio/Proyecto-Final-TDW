@@ -1,10 +1,9 @@
 class OperacionService {
+  static _instance = null;
   constructor() {
     if (OperacionService._instance) return OperacionService._instance;
     OperacionService._instance = this;
-    this._storage = StorageService.getInstance();
-    this._eventBus = EventBus.getInstance();
-    this._key = 'infopanel_operaciones';
+    this._eventBus = window.EventBus ? window.EventBus.getInstance() : null;
   }
 
   static getInstance() {
@@ -12,30 +11,39 @@ class OperacionService {
     return OperacionService._instance;
   }
 
-  getAll() {
-    const data = this._storage.get(this._key) || [];
-    return DataFactory.createCollection('operacion', data);
-  }
-
-  save(data) {
-    const operaciones = this.getAll();
-    if (!data.operacionId) {
-      const nueva = DataFactory.create('operacion', data);
-      operaciones.push(nueva);
-    } else {
-      const idx = operaciones.findIndex(o => o.operacionId === data.operacionId);
-      if (idx !== -1) {
-        operaciones[idx] = data;
-      }
+  async getAll() {
+    try {
+      const response = await ApiService.getInstance().fetchWithAuth('/operations');
+      const data = Array.isArray(response) ? response : (response.operaciones || response.operations || []);
+      return window.DataFactory ? window.DataFactory.createCollection('operacion', data) : data;
+    } catch (error) {
+      console.error("Error al obtener operaciones de la API:", error);
+      return [];
     }
-    this._storage.set(this._key, operaciones);
-    this._eventBus.emit('operaciones:changed', operaciones);
   }
 
-  delete(id) {
-    const actuales = this.getAll();
-    const filtradas = actuales.filter(o => o.operacionId !== id);
-    this._storage.set(this._key, filtradas);
-    this._eventBus.emit('operaciones:changed', filtradas);
+  async save(data, etag = null) {
+    let result;
+    if (!data.operacionId) {
+      result = await ApiService.getInstance().fetchWithAuth('/operations', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+    } else {
+      const headers = {};
+      if (etag) headers['If-Match'] = etag;
+      result = await ApiService.getInstance().fetchWithAuth(`/operations/${data.operacionId}`, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify(data)
+      });
+    }
+    if (this._eventBus) this._eventBus.emit('operaciones:changed', await this.getAll());
+    return result;
+  }
+
+  async delete(id) {
+    await ApiService.getInstance().fetchWithAuth(`/operations/${id}`, { method: 'DELETE' });
+    if (this._eventBus) this._eventBus.emit('operaciones:changed', await this.getAll());
   }
 }
